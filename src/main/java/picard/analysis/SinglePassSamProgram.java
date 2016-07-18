@@ -24,6 +24,7 @@
 
 package picard.analysis;
 
+import com.sun.prism.impl.Disposer;
 import htsjdk.samtools.SAMFileHeader;
 import htsjdk.samtools.SAMFileHeader.SortOrder;
 import htsjdk.samtools.SAMRecord;
@@ -42,8 +43,9 @@ import picard.cmdline.Option;
 import picard.cmdline.StandardOptionDefinitions;
 
 import java.io.File;
-import java.util.Arrays;
-import java.util.Collection;
+import java.util.*;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * Super class that is designed to provide some consistent structure between subclasses that
@@ -65,6 +67,8 @@ public abstract class SinglePassSamProgram extends CommandLineProgram {
 
     @Option(doc = "Stop after processing N reads, mainly for debugging.")
     public long STOP_AFTER = 0;
+
+    public static final int MAX_PAIRS = 1000;
 
     private static final Log log = Log.getInstance(SinglePassSamProgram.class);
 
@@ -125,6 +129,9 @@ public abstract class SinglePassSamProgram extends CommandLineProgram {
 
 
         final ProgressLogger progress = new ProgressLogger(log);
+        ExecutorService service = Executors.newFixedThreadPool(1);
+
+        List<Object[]> pairs = new ArrayList<>(MAX_PAIRS);
 
         for (final SAMRecord rec : in) {
             final ReferenceSequence ref;
@@ -134,9 +141,28 @@ public abstract class SinglePassSamProgram extends CommandLineProgram {
                 ref = walker.get(rec.getReferenceIndex());
             }
 
-            for (final SinglePassSamProgram program : programs) {
-                program.acceptRead(rec, ref);
+            pairs.add(new Object[] {rec, ref});
+
+            if (pairs.size() < MAX_PAIRS)
+            {
+                continue;
             }
+
+            final List<Object[]> tmpPairs = pairs;
+            pairs = new ArrayList<>(MAX_PAIRS);
+
+            service.execute(new Runnable() {
+                    public void run(){
+                        for (Object[] objects : tmpPairs) {
+                            SAMRecord rec = (SAMRecord) objects[0];
+                            ReferenceSequence ref = (ReferenceSequence) objects[1];
+                            for (final SinglePassSamProgram program : programs) {
+                                program.acceptRead(rec, ref);
+                            }
+                        }
+                    }
+                }
+            );
 
             progress.record(rec);
 
@@ -150,6 +176,7 @@ public abstract class SinglePassSamProgram extends CommandLineProgram {
                 break;
             }
         }
+        service.shutdown();
 
         CloserUtil.close(in);
 
