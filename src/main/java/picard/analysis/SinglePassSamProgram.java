@@ -46,6 +46,7 @@ import java.io.File;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Semaphore;
 
 /**
  * Super class that is designed to provide some consistent structure between subclasses that
@@ -69,6 +70,7 @@ public abstract class SinglePassSamProgram extends CommandLineProgram {
     public long STOP_AFTER = 0;
 
     public static final int MAX_PAIRS = 1000;
+    private static final Semaphore sem = new Semaphore(10);
 
     private static final class Task implements Runnable
     {
@@ -77,7 +79,7 @@ public abstract class SinglePassSamProgram extends CommandLineProgram {
 
         public Task(final List<Object[]> pairs, final Collection<SinglePassSamProgram> programs)
         {
-            System.out.println(pairs.size());
+            //System.out.println(pairs.size()); // debug
             this.pairs = pairs;
             this.programs = programs;
         }
@@ -91,6 +93,7 @@ public abstract class SinglePassSamProgram extends CommandLineProgram {
                     program.acceptRead(rec, ref);
                 }
             }
+            sem.release();
         }
     }
 
@@ -172,10 +175,15 @@ public abstract class SinglePassSamProgram extends CommandLineProgram {
                 continue;
             }
 
+            try {
+                sem.acquire();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
             service.execute(new Task(pairs, programs));
             pairs = new ArrayList<>(MAX_PAIRS);
 
-            //System.out.println(progress.getCount()); //debug
+            //System.out.println(progress.getCount()); // debug
 
             // See if we need to terminate early?
             if (stopAfter > 0 && progress.getCount() >= stopAfter) {
@@ -190,6 +198,11 @@ public abstract class SinglePassSamProgram extends CommandLineProgram {
 
         // See if for cycle has finished and we have some records in pairs to process
         if (pairs.size() != 0) {
+            try {
+                sem.acquire();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
             service.execute(new Task(pairs, programs));
             }
 
