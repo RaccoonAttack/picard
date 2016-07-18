@@ -70,6 +70,29 @@ public abstract class SinglePassSamProgram extends CommandLineProgram {
 
     public static final int MAX_PAIRS = 1000;
 
+    private static final class Task implements Runnable
+    {
+        private final List<Object[]> pairs;
+        private final Collection<SinglePassSamProgram> programs;
+
+        public Task(final List<Object[]> pairs, final Collection<SinglePassSamProgram> programs)
+        {
+            this.pairs = pairs;
+            this.programs = programs;
+        }
+
+        @Override
+        public void run(){
+            for (Object[] objects : pairs) {
+                SAMRecord rec = (SAMRecord) objects[0];
+                ReferenceSequence ref = (ReferenceSequence) objects[1];
+                for (final SinglePassSamProgram program : programs) {
+                    program.acceptRead(rec, ref);
+                }
+            }
+        }
+    }
+
     private static final Log log = Log.getInstance(SinglePassSamProgram.class);
 
     /**
@@ -127,9 +150,8 @@ public abstract class SinglePassSamProgram extends CommandLineProgram {
             anyUseNoRefReads = anyUseNoRefReads || program.usesNoRefReads();
         }
 
-
         final ProgressLogger progress = new ProgressLogger(log);
-        ExecutorService service = Executors.newFixedThreadPool(1);
+        ExecutorService service = Executors.newSingleThreadExecutor();
 
         List<Object[]> pairs = new ArrayList<>(MAX_PAIRS);
 
@@ -142,7 +164,6 @@ public abstract class SinglePassSamProgram extends CommandLineProgram {
             }
 
             pairs.add(new Object[] {rec, ref});
-
             if (pairs.size() < MAX_PAIRS)
             {
                 continue;
@@ -151,20 +172,13 @@ public abstract class SinglePassSamProgram extends CommandLineProgram {
             final List<Object[]> tmpPairs = pairs;
             pairs = new ArrayList<>(MAX_PAIRS);
 
-            service.execute(new Runnable() {
-                    public void run(){
-                        for (Object[] objects : tmpPairs) {
-                            SAMRecord rec = (SAMRecord) objects[0];
-                            ReferenceSequence ref = (ReferenceSequence) objects[1];
-                            for (final SinglePassSamProgram program : programs) {
-                                program.acceptRead(rec, ref);
-                            }
-                        }
-                    }
-                }
-            );
+            service.execute(new Task(tmpPairs, programs));
 
-            progress.record(rec);
+            for (int i = 0; i < tmpPairs.size(); ++i) {
+                progress.record(rec);
+            }
+
+            //System.out.println(progress.getCount()); //debug
 
             // See if we need to terminate early?
             if (stopAfter > 0 && progress.getCount() >= stopAfter) {
