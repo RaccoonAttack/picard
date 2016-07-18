@@ -77,6 +77,7 @@ public abstract class SinglePassSamProgram extends CommandLineProgram {
 
         public Task(final List<Object[]> pairs, final Collection<SinglePassSamProgram> programs)
         {
+            System.out.println(pairs.size());
             this.pairs = pairs;
             this.programs = programs;
         }
@@ -164,19 +165,15 @@ public abstract class SinglePassSamProgram extends CommandLineProgram {
             }
 
             pairs.add(new Object[] {rec, ref});
-            if (pairs.size() < MAX_PAIRS)
+            progress.record(rec);
+
+            if (pairs.size() < MAX_PAIRS && progress.getCount() != stopAfter)
             {
                 continue;
             }
 
-            final List<Object[]> tmpPairs = pairs;
+            service.execute(new Task(pairs, programs));
             pairs = new ArrayList<>(MAX_PAIRS);
-
-            service.execute(new Task(tmpPairs, programs));
-
-            for (int i = 0; i < tmpPairs.size(); ++i) {
-                progress.record(rec);
-            }
 
             //System.out.println(progress.getCount()); //debug
 
@@ -190,6 +187,12 @@ public abstract class SinglePassSamProgram extends CommandLineProgram {
                 break;
             }
         }
+
+        // See if for cycle has finished and we have some records in pairs to process
+        if (pairs.size() != 0) {
+            service.execute(new Task(pairs, programs));
+            }
+
         service.shutdown();
 
         CloserUtil.close(in);
