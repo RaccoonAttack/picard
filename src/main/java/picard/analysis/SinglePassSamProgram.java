@@ -47,6 +47,7 @@ import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Super class that is designed to provide some consistent structure between subclasses that
@@ -180,6 +181,7 @@ public abstract class SinglePassSamProgram extends CommandLineProgram {
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
+
             service.execute(new Task(pairs, programs));
             pairs = new ArrayList<>(MAX_PAIRS);
 
@@ -204,9 +206,15 @@ public abstract class SinglePassSamProgram extends CommandLineProgram {
                 e.printStackTrace();
             }
             service.execute(new Task(pairs, programs));
-            }
+        }
 
         service.shutdown();
+
+        try {
+            service.awaitTermination(1, TimeUnit.DAYS);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
 
         CloserUtil.close(in);
 
